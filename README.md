@@ -1,13 +1,14 @@
 Moodle Novo Unb
 ===============
 
-Script que baixa automaticamente arquivos do novo moodle da unb (http://ead.unb.br)
+Script que baixa automaticamente arquivos do novo moodle da Universidade de Brasília
+(http://ead.unb.br)
 
 
 Instalação
 ----------
 
-Antes de executar o script,v erifique se você possui instalado os programas `lynx`,
+Antes de executar o script, verifique se você possui instalado os programas `lynx`,
 `bash` e `coreutils`
 
 Entre no diretório para o qual deseja que os arquivos sejam baixados usando e execute
@@ -30,5 +31,5 @@ Moodle.
 Contato
 -------
 
-Lucas "Seninha" de Sena: `eu AT seninha.net`
+Lucas "Seninha" de Sena: `eu@seninha.net`
 
