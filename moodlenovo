@@ -1,17 +1,84 @@
 #!/bin/bash
+#
+# moodlenovo - Script para obter arquivos disponibilizados no moodle (ead.unb.br)
 
-[[ -n \$TMPDIR && -d \$TMPDIR ]] || TMPDIR="/tmp/"
 
+## Definir diretório temporário
+[[ -n $TMPDIR && -d $TMPDIR ]] || TMPDIR="/tmp"
+
+
+## Obter diretório onde este script está
+_dir="$(dirname $0)"
+[[ -z $_dir ]] && _dir="./"
+
+
+## Definir onde está o arquivo de configuração {{{
+if [[ -n $XDG_CONFIG_HOME && -e ${XDG_CONFIG_HOME}/moodlenovo.conf ]] ; then
+	_confFile=${XDG_CONFIG_HOME}/moodlenovo.conf
+elif [[ -e ~/.config/moodlenovo.conf ]] ; then
+	_confFile=~/.config/moodlenovo.conf
+elif [[ -e ~/moodlenovo.conf ]] ; then
+	_confFile=~/.moodlenovo.conf
+else
+	_confFile=~/.config/moodlenovo.conf
+fi
+## }}}
+
+
+## Obter dados do arquivo de onfiguração (ou criá-lo, caso não exista) {{{
+if [[ -f $_confFile ]] ; then
+	# Ações para caso o arquivo de configuração exista
+	_user="$(cat $_confFile | grep user | sed -r 's/ += +/=/ ; s/"//g' | cut -d'=' -f2)"
+	_passwd="$(cat $_confFile | grep passwd | sed -r 's/ += +/=/ ; s/"//g' | cut -d'=' -f2)"
+	[[ -z $_user || -z $_passwd ]] && echo "Arquivo de configuração $_confFile não possui usuário ou senha válidos" >&2 && exit 1
+
+else
+
+	# Obter dados de usuário interativamente
+	read -p "Insira o nome de usuário: " -r _user
+	read -p "Insira a senha de usuário: " -r -s _passwd
+
+	# Perguntar se dados devem ser salvos em arquivo de configuração
+	read -p "
+Salvar os dados informados para futuras chamadas do programa? [S/s/N/n]" _save
+	_count=1
+	while [[ $_count = 1 ]] ; do
+		if [[ $_save = "n" || $_save = "N" ]] ; then
+			_count=0
+		elif [[ $_save = "y" || $_save = "Y" || $_save = "s" || $_save = "S" || -z $_save ]] ; then
+			echo "user=$_user" > $_confFile
+			echo "passwd=$_passwd" >> $_confFile
+			_count=0
+		else
+			read -p "\nErro, insira um caractere válido: [S/s/N/n]" _save
+		fi
+	done
+fi
+# }}}
+
+
+## Verificar se usuário e senha são válidos
+echo $_user | grep '[^1234567890]'   && echo "Erro: o campo usuário só pode conter números" >&2 && exit 1
+echo $_passwd | grep ' '   && echo "Erro: esse script não funciona caso o usuário ou senha conter espaço" >&2 && exit 1
+
+
+## Criar arquivo moodlenovo.out vazio
 echo > ${TMPDIR}/moodlenovo.out
 
-( ./moodlenovoget ) &> /dev/null &
 
+## Executar script para obter arquivos do moodle
+( ${_dir}/moodlenovoget $_user $_passwd ) &> /dev/null &
+
+## Gravar PID e ler arquivo de saída gerado pelo script anterior
 _pid=$!
 while kill -0 $_pid
 do
+	clear
 	cat ${TMPDIR}/moodlenovo.out
 	sleep 0.5
 done
 
+
+## Remover arquivos gerados no diretório temporário
 rm ${TMPDIR}/moodlenovo*
 
