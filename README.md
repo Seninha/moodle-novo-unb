@@ -21,17 +21,34 @@ Moodle.
 
 [Moodle]: http://ead.unb.br
 
-
 Instalação
 ----------
 
-Antes de instalar o script, verifique se você possui instalado os programas `lynx`, `bash` e `coreutils`
+1. Antes de instalar o script, verifique se você possui instalado os programas `lynx`, `bash` e `coreutils`
 
-Para instalar o programa basta ter os dois arquivos `moodlenovo` e `moodlenovoget` num mesmo diretório.
+2. Para instalar o programa basta ter os dois arquivos `moodlenovo` e `moodlenovoget` num mesmo diretório.
 Certifique-se de que ambos os arquivos sejam executáveis!
 
-Entre no diretório para o qual deseja que os arquivos sejam baixados usando `cd` e execute nesse diretório
+3. Crie no diretório `~/.config/` um arquivo chamado `moodlenovo.conf` e coloque nele duas variáveis em shell
+que contém o nome do seu usuário (usualmente seu CPF) e a sua senha. Faça da seguinte forma:
+
+``` bash
+user=02578345321
+passwd=1234
+```
+
+4. Entre no diretório para o qual deseja que os arquivos sejam baixados usando `cd` e execute nesse diretório
 o scrip `moodlenovo`.
+
+
+Nota
+----
+
+Este script se baseia em usar keybindings do browser `lynx` para mover pelo site da ead e expressões regulares
+para obter no site a URL dos arquivos.
+
+O arquivo `moodlenovo` apenas chama o `moodlenovoget` e esconde os processos realizados pelo lynx. Se deseja
+ver o lynx trabalhando, então execute o `moodlenovoget`
 
 
 Contato
