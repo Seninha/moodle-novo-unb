@@ -1,0 +1,220 @@
+#!/bin/bash
+
+## Funções para mostrar progresso
+carregar () {
+	sleep 0.2
+	echo -n -e "\e[s\e[k$*... \ \e[u"
+	sleep 0.2
+	echo -n -e "\e[s\e[k$*... | \e[u"
+	sleep 0.2
+	echo -n -e "\e[s\e[k$*... - \e[u"
+	sleep 0.2
+	echo -n -e "\e[s\e[k$*... / \e[u"
+}
+
+## Definir variáveis básicas
+[[ -n $TMPDIR && -d $TMPDIR ]] || TMPDIR="/tmp/"
+
+
+## Definir onde está o arquivo de configuração
+if [[ -n $XDG_CONFIG_HOME && -e ${XDG_CONFIG_HOME}/moodlenovo.conf ]] ; then
+	_confFile=${XDG_CONFIG_HOME}/moodlenovo.conf
+elif [[ -e ~/.config/moodlenovo.conf ]] ; then
+	_confFile=~/.config/moodlenovo.conf
+elif [[ -e ~/moodlenovo.conf ]] ; then
+	_confFile=~/.moodlenovo.conf
+else
+	_confFile=~/.config/moodlenovo.conf
+fi
+
+
+## Obter dados do arquivo de configuração (ou criá-lo, caso não exista)
+if [[ -f $_confFile ]] ; then
+	_user="$(cat $_confFile | grep user | sed -r 's/ += +/=/ ; s/"//g' | cut -d'=' -f2)"
+	_passwd="$(cat $_confFile | grep passwd | sed -r 's/ += +/=/ ; s/"//g' | cut -d'=' -f2)"
+	[[ -z $_user && -z $_passwd ]] && echo "Arquivo de configuração $_confFile não possui usuário ou senha" >&2 && exit 1
+else
+	read -p "Insira o nome de usuário: " -r _user
+	read -p "Insira a senha de usuário: " -r -s _passwd
+	read -p "
+Salvar os dados informados para futuras chamadas do programa? [S/s/N/n]" _save
+	_count=1
+	while [[ $_count = 1 ]] ; do
+		if [[ $_save = "n" || $_save = "N" ]] ; then
+			_count=0
+		elif [[ $_save = "y" || $_save = "Y" || $_save = "s" || $_save = "S" || -z $_save ]] ; then
+			echo "user=$_user" > $_confFile
+			echo "passwd=$_passwd" >> $_confFile
+			_count=0
+		else
+			read -p "\nErro, insira um caractere válido: [S/s/N/n]" _save
+		fi
+	done
+fi
+
+echo $_user | grep ' '   && echo "Erro: esse script não funciona caso o usuário ou senha conter espaço" > ${TMPDIR}/moodlenovo.out && exit 1
+echo $_passwd | grep ' '   && echo "Erro: esse script não funciona caso o usuário ou senha conter espaço" > ${TMPDIR}/moodlenovo.out && exit 1
+
+
+## Criar source1 do lynx
+
+echo "key /
+key C
+key P
+key F
+key ^J" > ${TMPDIR}/moodlenovo.script
+
+echo -n "$_user" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+echo "key ^J" >> ${TMPDIR}/moodlenovo.script
+echo -n "$_passwd" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+
+echo "key ^J
+key ^J
+key \\
+key p
+key ^J
+key ^U" >> ${TMPDIR}/moodlenovo.script
+
+echo "${TMPDIR}/moodlenovo.source1" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+
+echo "key ^J
+key s
+key q
+key s" >> ${TMPDIR}/moodlenovo.script
+
+lynx -accept_all_cookies -cmd_script=${TMPDIR}/moodlenovo.script ead.unb.br &
+_pid=$!
+while kill -0 $_pid
+do
+	carregar "Tentando se conectar ao moodle" > ${TMPDIR}/moodlenovo.out
+	sleep 0.5
+done
+echo "
+\e[s" > ${TMPDIR}/moodlenovo.out
+
+
+## Filtrar source1 e obter urls dos cursos inscritos
+_urls=$(cat ${TMPDIR}/moodlenovo.source1 |
+sed -r '/div role/!d ; s/</\n</g' |
+grep -i '^<a title' |
+grep --invert-match -i 'mod/forum' |
+sed -r 's/"/\n/g' |
+sed -r '/^$/d' |
+grep '^http')
+
+Curnum=$(echo $_urls | wc -l)
+
+[[ $Curnum = 0 ]] && echo "Não foi encontrado nenhum curso no moodle ou o usuário/senha está incorreto" > ${TMPDIR}/moodlenovo.out && exit 1
+echo "Número de cursos encontrados: $Curnum
+" > ${TMPDIR}/moodlenovo.out
+
+## Criar script2 para cada Curso inscrito.
+_count=0
+for _url in $_urls ; do
+	_count=$(( _count + 1))
+
+	echo "key /
+	key C
+	key P
+	key F
+	key ^J" > ${TMPDIR}/moodlenovo.script
+
+	echo -n "$_user" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+	echo "key ^J" >> ${TMPDIR}/moodlenovo.script
+	echo -n "$_passwd" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+
+	echo "key ^J
+	key ^J
+	key g" >> ${TMPDIR}/moodlenovo.script
+
+	echo -n "$_url" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+
+	echo "key ^J
+	key \\
+	key p
+	key ^J
+	key ^U" >> ${TMPDIR}/moodlenovo.script
+
+	echo "${TMPDIR}/moodlenovo.source2.${_count}" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+
+	echo "key ^J
+	key s
+	key q
+	key s" >> ${TMPDIR}/moodlenovo.script
+
+	lynx -accept_all_cookies -cmd_script=${TMPDIR}/moodlenovo.script ead.unb.br &
+	_pid=$!
+	while kill -0 $_pid
+	do
+		carregar "Tentando conectar ao curso $_count" > ${TMPDIR}/moodlenovo.out
+		sleep 0.5
+	done
+	echo "
+	\e[s" > ${TMPDIR}/moodlenovo.out
+
+
+	## Filtrar source2 e obter links de downloads dos cursos inscritos
+
+	cat ${TMPDIR}/moodlenovo.source2.${_count} |
+	grep -i -e '^<li class="activity' -e '<title>' -e '^</ul>.*class=.section.' -e 'class="sectionname"' |
+	sed -r 's/.*class="sectionname">([^<>]+)/\1%%FIM%%/' |
+	sed -r 's/^<li class="activity ([[:alpha:]]+) .*href="/\1 / ; s/">.*/%%FIM%%/' |
+	sed 's/%%FIM%%/\n/g' |
+	sed -r '/<\/li>$/d' |
+	sed -r 's/.*.section..*--.*/----/ ; /^forum/d' |
+	sed -r '/^----/N ; s/\n/ / ; /^----/N ; s/\n// ; /^----/s/<\/h3>.*// ; /^----/N ; s/\n//' |
+	sed -r '/^</d ; /^[[:blank:]]*$/d' |
+	sed 's/^[[:blank:]]*<title>/==== / ; s/<\/title>.*//' |
+	sed '/^----/s/<.*//g' > ${TMPDIR}/moodlenovo.filtrado.${_count}
+
+	_title=
+	_subtitle='/'
+	_subcount=0
+
+	IFS="
+"
+
+	for i in $(cat ${TMPDIR}/moodlenovo.filtrado.${_count}) ; do
+		echo $i | grep -e '^====' &> /dev/null && echo "$i" > ${TMPDIR}/moodlenovo.out && continue
+		echo $i | grep -e '^----' &> /dev/null && echo "$i" > ${TMPDIR}/moodlenovo.out && continue
+
+		_subcount=$(( _subcount + 1))
+		_resource=$(echo $i | sed -r 's/^[[:alpha:]]+ //')
+
+		echo "key /
+		key C
+		key P
+		key F
+		key ^J" > ${TMPDIR}/moodlenovo.script
+		echo -n "$_user" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+		echo "key ^J" >> ${TMPDIR}/moodlenovo.script
+		echo -n "$_passwd" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+		echo "key ^J
+		key ^J
+		key g" >> ${TMPDIR}/moodlenovo.script
+		echo -n "$_resource" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+		echo "key ^J
+		key \\
+		key p
+		key ^J
+		key ^U" >> ${TMPDIR}/moodlenovo.script
+		echo "${TMPDIR}/moodlenovo.source3.${_count}.${_subcount}" | sed -r 's/./key &\n/g' >> ${TMPDIR}/moodlenovo.script
+		echo "key ^J
+		key s
+		key q
+		key s" >> ${TMPDIR}/moodlenovo.script
+
+		lynx -accept_all_cookies -cmd_script=${TMPDIR}/moodlenovo.script ead.unb.br &
+		_pid=$!
+		while kill -0 $_pid
+		do
+			carregar "Tentando obter ${_subcount}º arquivo" > ${TMPDIR}/moodlenovo.out
+			sleep 0.5
+		done
+		echo "
+		\e[s" > ${TMPDIR}/moodlenovo.out
+		echo > ${TMPDIR}/moodlenovo.out
+
+		wget -nc "$(cat ${TMPDIR}/moodlenovo.source3.${_count}.${_subcount} | grep -A5 -e '<div role' | grep -e 'href=' | sed -n 1p | sed -r 's/href="/\n/' | sed -r '1d ; s/"/\n/' | sed -r '2d')" > ${TMPDIR}/moodlenovo.out
+	done
+done

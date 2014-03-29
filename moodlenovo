@@ -1,0 +1,17 @@
+#!/bin/bash
+
+[[ -n \$TMPDIR && -d \$TMPDIR ]] || TMPDIR="/tmp/"
+
+echo > ${TMPDIR}/moodlenovo.out
+
+( ./moodlenovoget ) &> /dev/null &
+
+_pid=$!
+while kill -0 $_pid
+do
+	cat ${TMPDIR}/moodlenovo.out
+	sleep 0.5
+done
+
+rm ${TMPDIR}/moodlenovo*
+
