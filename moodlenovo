@@ -66,8 +66,195 @@ echo $_passwd | grep ' '   && echo "Erro: esse script não funciona caso o usuá
 echo > ${TMPDIR}/moodlenovo.out
 
 
+## Criar script para obter arquivos do moodle {{{
+cat > ${TMPDIR}/moodlenovoget << EOF
+#!/bin/bash
+#
+# moodlenovoget - script para baixar arquivos do moodle
+
+
+echo -e "Iniciando Script\\n"
+echo -e "Iniciando Script\\n" >> \${TMPDIR}/moodlenovo.out
+
+
+## O primeiro argumento se refere ao nome do usuário, o segundo à senha
+_user=\$1
+_passwd=\$2
+
+
+## Funções para mostrar progresso
+carregar () {
+	_pid="\$1"
+	shift
+	echo -n "> \$* " >> \${TMPDIR}/moodlenovo.out
+	while kill -0 "\$_pid" &> /dev/null
+	do
+		echo -n . >> \${TMPDIR}/moodlenovo.out
+		sleep 0.5
+	done
+	echo >> \${TMPDIR}/moodlenovo.out
+}
+
+
+## Definir diretório temporário
+[[ -n \$TMPDIR && -d \$TMPDIR ]] || TMPDIR="/tmp/"
+
+
+## Criar script para passar ao lynx (Tentativa de conexão) {{{
+echo "key /
+key C
+key P
+key F
+key ^J" > \${TMPDIR}/moodlenovo.script
+echo -n "\$_user" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+echo "key ^J" >> \${TMPDIR}/moodlenovo.script
+echo -n "\$_passwd" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+echo "key ^J
+key ^J
+key \\\\
+key p
+key ^J
+key ^U" >> \${TMPDIR}/moodlenovo.script
+echo "\${TMPDIR}/moodlenovo.source1" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+echo "key ^J
+key s
+key q
+key s" >> \${TMPDIR}/moodlenovo.script
+## }}}
+
+
+## Tentativa de conexão
+lynx -accept_all_cookies -cmd_script=\${TMPDIR}/moodlenovo.script ead.unb.br &
+carregar \$! "Tentando se conectar ao moodle"
+
+
+## Filtrar arquivo gerado pela tentativa de conexão e obter URLs dos cursos inscritos {{{
+_urls=\$(cat \${TMPDIR}/moodlenovo.source1 |
+sed -r '/div role/!d ; s/</\\n</g' |
+grep -i '^<a title' |
+grep --invert-match -i 'mod/forum' |
+sed -r 's/"/\\n/g' |
+sed -r '/^\$/d' |
+grep '^http')
+## }}}
+
+
+## Ação para caso não for encontrado cursos inscritos
+Curnum=\$(echo \$_urls | tr ' ' '\\n' |  wc -l)
+[[ \$Curnum = 0 ]] && echo "Não foi encontrado nenhum curso no moodle ou o usuário/senha está incorreto" >> \${TMPDIR}/moodlenovo.out && exit 1
+echo "
+Número de cursos encontrados: \$Curnum
+" >> \${TMPDIR}/moodlenovo.out
+
+
+_count=0
+for _url in \$_urls ; do
+	_count=\$(( _count + 1))
+
+	## Criar script para passar ao lynx (Tentativa de conectar ao curso) {{{
+	echo "key /
+	key C
+	key P
+	key F
+	key ^J" > \${TMPDIR}/moodlenovo.script
+	echo -n "\$_user" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+	echo "key ^J" >> \${TMPDIR}/moodlenovo.script
+	echo -n "\$_passwd" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+	echo "key ^J
+	key ^J
+	key g" >> \${TMPDIR}/moodlenovo.script
+	echo -n "\$_url" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+	echo "key ^J
+	key \\\\
+	key p
+	key ^J
+	key ^U" >> \${TMPDIR}/moodlenovo.script
+	echo "\${TMPDIR}/moodlenovo.source2.\${_count}" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+	echo "key ^J
+	key s
+	key q
+	key s" >> \${TMPDIR}/moodlenovo.script
+	## }}}
+
+
+	## Tentativa de conectar ao curso
+	lynx -accept_all_cookies -cmd_script=\${TMPDIR}/moodlenovo.script ead.unb.br &
+	carregar \$! "Tentando se conectar ao curso \$_count"
+
+
+	## Filtrar arquivo gerado pela tentativa de conectar ao curso e obter lista de arquivos {{{
+	cat \${TMPDIR}/moodlenovo.source2.\${_count} |
+	grep -i -e '^<li class="activity' -e '<title>' -e '^</ul>.*class=.section.' -e 'class="sectionname"' |
+	sed -r 's/.*class="sectionname">([^<>]+)/\\1%%FIM%%/' |
+	sed -r 's/^<li class="activity ([[:alpha:]]+) .*href="/\\1 / ; s/">.*/%%FIM%%/' |
+	sed 's/%%FIM%%/\\n/g' |
+	sed -r '/<\\/li>\$/d' |
+	sed -r 's/.*.section..*--.*/----/ ; /^forum/d' |
+	sed -r '/^----/N ; s/\\n/ / ; /^----/N ; s/\\n// ; /^----/s/<\\/h3>.*// ; /^----/N ; s/\\n//' |
+	sed -r '/^</d ; /^[[:blank:]]*\$/d' |
+	sed 's/^[[:blank:]]*<title>/==== / ; s/<\\/title>.*//' |
+	sed '/^----/s/<.*//g' > \${TMPDIR}/moodlenovo.filtrado.\${_count}
+	## }}}
+
+
+	_title=
+	_subtitle='/'
+	_subcount=0
+	IFS="
+"
+
+	for i in \$(cat \${TMPDIR}/moodlenovo.filtrado.\${_count}) ; do
+
+		## Mostrar o nome do curso e o grupo de arquivos que está sendo baixado 
+		echo \$i | grep -e '^====' &> /dev/null && echo -e "\\n\$i" >> \${TMPDIR}/moodlenovo.out && continue
+		echo \$i | grep -e '^----' &> /dev/null && echo "\$i" >> \${TMPDIR}/moodlenovo.out && continue
+
+		## Obter número do download e URL do download
+		_subcount=\$(( _subcount + 1))
+		_resource=\$(echo \$i | sed -r 's/^[[:alpha:]]+ //')
+
+		## Filtrar arquivo filtrado para obter a página do arquivo {{{
+		echo "key /
+		key C
+		key P
+		key F
+		key ^J" > \${TMPDIR}/moodlenovo.script
+		echo -n "\$_user" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+		echo "key ^J" >> \${TMPDIR}/moodlenovo.script
+		echo -n "\$_passwd" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+		echo "key ^J
+		key ^J
+		key g" >> \${TMPDIR}/moodlenovo.script
+		echo -n "\$_resource" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+		echo "key ^J
+		key \\\\
+		key p
+		key ^J
+		key ^U" >> \${TMPDIR}/moodlenovo.script
+		echo "\${TMPDIR}/moodlenovo.source3.\${_count}.\${_subcount}" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodlenovo.script
+		echo "key ^J
+		key s
+		key q
+		key s" >> \${TMPDIR}/moodlenovo.script
+		### }}}
+
+
+		## Tentativa de se conectar à página do arquivo
+		lynx -accept_all_cookies -cmd_script=\${TMPDIR}/moodlenovo.script ead.unb.br &
+		carregar \$! "Tentando obter \${_subcount}º arquivo"
+
+
+		## Fazer download de arquivo
+		wget -nc "\$(cat \${TMPDIR}/moodlenovo.source3.\${_count}.\${_subcount} | grep -A5 -e '<div role' | grep -e 'href=' | sed -n 1p | sed -r 's/href="/\\n/' | sed -r '1d ; s/"/\\n/' | sed -r '2d')" >> \${TMPDIR}/moodlenovo.out
+	done
+done
+EOF
+chmod +x ${TMPDIR}/moodlenovoget
+## }}}
+
+
 ## Executar script para obter arquivos do moodle
-( ${_dir}/moodlenovoget $_user $_passwd ) &> /dev/null &
+( ${TMPDIR}/moodlenovoget $_user $_passwd ) &> /dev/null &
 
 ## Gravar PID e ler arquivo de saída gerado pelo script anterior
 _pid=$!
