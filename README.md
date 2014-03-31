@@ -1,8 +1,12 @@
 Moodle Novo Unb
 ===============
 
-Script que baixa automaticamente arquivos do novo moodle da Universidade de Brasília
-(http://ead.unb.br)
+Esse repositório contém dois scripts:
+
+Nome do Script | Descrição
+---------------|----------
+`moodleantigo` | Baixa arquivos do moodle antigo
+`moodlenovo`   | Baixa arquivos do moodle novo
 
 
 Instalação
@@ -12,7 +16,8 @@ Antes de executar o script, verifique se você possui instalado os programas `ly
 `bash` e `coreutils`
 
 Entre no diretório para o qual deseja que os arquivos sejam baixados usando e execute
-nesse diretório o script `moodlenovo`.
+nesse diretório o script `moodlenovo` para baixar arquivos do moodle novo, ou execute
+o script `moodleantigo` para baixar arquivos do moodle antigo.
 
 
 Nota
@@ -22,10 +27,8 @@ Se você sabe a programar em shell script e conhece bastante sobre Espressões R
 favor informe quaisquer bugs que você encontrar em melhorar o código. Se quiser pode me mandar
 um email que te adicionarei como colaborador do script.
 
-Este script só funciona para o novo [Moodle][] da UnB. Em breve criarei um script para o antigo
-Moodle.
-
-[Moodle]: http://ead.unb.br
+Site do moodle novo: http://ead.unb.br
+Site do moodle antigo: http://aprender.unb.br
 
 
 Contato
