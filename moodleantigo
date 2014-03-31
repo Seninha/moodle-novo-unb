@@ -1,0 +1,277 @@
+#!/bin/bash
+#
+# moodleantigo - Script para obter arquivos disponibilizados no moodle (aprender.unb.br)
+
+
+## Definir diretório temporário
+[[ -n $TMPDIR && -d $TMPDIR ]] || TMPDIR="/tmp"
+
+
+## Obter diretório onde este script está
+_dir="$(dirname $0)"
+[[ -z $_dir ]] && _dir="./"
+
+
+## Definir onde está o arquivo de configuração {{{
+if [[ -n $XDG_CONFIG_HOME && -e ${XDG_CONFIG_HOME}/moodleantigo.conf ]] ; then
+	_confFile=${XDG_CONFIG_HOME}/moodleantigo.conf
+elif [[ -e ~/.config/moodleantigo.conf ]] ; then
+	_confFile=~/.config/moodleantigo.conf
+elif [[ -e ~/moodleantigo.conf ]] ; then
+	_confFile=~/.moodleantigo.conf
+else
+	_confFile=~/.config/moodleantigo.conf
+fi
+## }}}
+
+
+## Obter dados do arquivo de onfiguração (ou criá-lo, caso não exista) {{{
+if [[ -f $_confFile ]] ; then
+	# Ações para caso o arquivo de configuração exista
+	_user="$(cat $_confFile | grep user | sed -r 's/ += +/=/ ; s/"//g' | cut -d'=' -f2)"
+	_passwd="$(cat $_confFile | grep passwd | sed -r 's/ += +/=/ ; s/"//g' | cut -d'=' -f2)"
+	[[ -z $_user || -z $_passwd ]] && echo "Arquivo de configuração $_confFile não possui usuário ou senha válidos" >&2 && exit 1
+
+else
+
+	# Obter dados de usuário interativamente
+	read -p "Insira o nome de usuário: " -r _user
+	read -p "Insira a senha de usuário: " -r -s _passwd
+
+	# Perguntar se dados devem ser salvos em arquivo de configuração
+	read -p "
+Salvar os dados informados para futuras chamadas do programa? [S/s/N/n]" _save
+	_count=1
+	while [[ $_count = 1 ]] ; do
+		if [[ $_save = "n" || $_save = "N" ]] ; then
+			_count=0
+		elif [[ $_save = "y" || $_save = "Y" || $_save = "s" || $_save = "S" || -z $_save ]] ; then
+			echo "user=$_user" > $_confFile
+			echo "passwd=$_passwd" >> $_confFile
+			_count=0
+		else
+			read -p "\nErro, insira um caractere válido: [S/s/N/n]" _save
+		fi
+	done
+fi
+# }}}
+
+
+## Verificar se usuário e senha são válidos
+echo $_user | grep ' '   && echo "Erro: esse script não funciona caso o usuário ou senha conter espaço" >&2 && exit 1
+echo $_passwd | grep ' ' && echo "Erro: esse script não funciona caso o usuário ou senha conter espaço" >&2 && exit 1
+
+
+## Criar arquivo moodleantigo.out vazio
+echo > ${TMPDIR}/moodleantigo.out
+
+
+## Criar arquivo que vai efetivamente baixar os arquivos do moodle {{{
+cat > ${TMPDIR}/moodleantigoget << EOF
+#!/bin/bash
+#
+# moodleantigoget - script para baixar arquivos do moodle
+
+
+## O primeiro argumento se refere ao nome do usuário, o segundo à senha
+_user=\$1
+_passwd=\$2
+
+
+## Funções para mostrar progresso
+carregar () {
+	_pid="\$1"
+	shift
+	echo -n "> \$* " >> \${TMPDIR}/moodleantigo.out
+	while kill -0 "\$_pid" &> /dev/null
+	do
+		echo -n . >> \${TMPDIR}/moodleantigo.out
+		sleep 0.5
+	done
+	echo >> \${TMPDIR}/moodleantigo.out
+}
+
+
+## Definir diretório temporário
+[[ -n \$TMPDIR && -d \$TMPDIR ]] || TMPDIR="/tmp/"
+
+
+## Criar script para passar ao lynx (Tentativa de conexão) {{{
+echo "key /
+key v
+key i
+key s
+key i
+key t
+key a
+key n
+key t
+key e
+key ^J
+key Up Arrow
+key Up Arrow
+key Up Arrow" > \${TMPDIR}/moodleantigo.script
+echo -n "\$_user" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+echo "key ^J" >> \${TMPDIR}/moodleantigo.script
+echo -n "\$_passwd" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+echo "key ^J
+key ^J
+key \\\\
+key p
+key ^J
+key ^U" >> \${TMPDIR}/moodleantigo.script
+echo "\${TMPDIR}/moodleantigo.source1" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+echo "key ^J
+key s
+key q
+key s" >> \${TMPDIR}/moodleantigo.script
+## }}}
+
+
+## Tentativa de conexão
+lynx -accept_all_cookies -cmd_script=\${TMPDIR}/moodleantigo.script aprender.unb.br &
+carregar \$! "Tentando se conectar ao moodle"
+
+
+## Filtrar arquivo gerado pela tentativa de conexão e obter URLs dos cursos inscritos {{{
+_urls=\$(cat \${TMPDIR}/moodleantigo.source1 |
+egrep -e '^<li class="r' |
+egrep -e 'disciplina' |
+sed -r 's/href/\\n&/' |
+sed -r 's/"//' |
+sed -r 's/"/\\n/' |
+egrep -e '^href' |
+sed -r 's/href=.*id=//')
+## }}}
+
+
+## Ação para caso não for encontrado cursos inscritos
+Curnum=\$(echo \$_urls | tr ' ' '\\n' |  wc -l)
+[[ \$Curnum = 0 ]] && echo "Não foi encontrado nenhum curso no moodle ou o usuário/senha está incorreto" >> \${TMPDIR}/moodleantigo.out && exit 1
+echo "
+Número de cursos encontrados: \$Curnum
+" >> \${TMPDIR}/moodleantigo.out
+
+
+_count=0
+for _url in \$_urls ; do
+	_count=\$(( _count + 1))
+
+	## Criar script para passar ao lynx (Tentativa de conectar ao curso) {{{
+	echo "key /
+	key v
+	key i
+	key s
+	key i
+	key t
+	key a
+	key n
+	key t
+	key e
+	key ^J
+	key Up Arrow
+	key Up Arrow
+	key Up Arrow" > \${TMPDIR}/moodleantigo.script
+	echo -n "\$_user" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+	echo "key ^J" >> \${TMPDIR}/moodleantigo.script
+	echo -n "\$_passwd" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+	echo "key ^J
+	key ^J
+	key g" >> \${TMPDIR}/moodleantigo.script
+	echo -n "http://aprender.unb.br/mod/resource/index.php?id=\$_url" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+	echo "key ^J
+	key \\\\
+	key p
+	key ^J
+	key ^U" >> \${TMPDIR}/moodleantigo.script
+	echo "\${TMPDIR}/moodleantigo.source2.\${_count}" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+	echo "key ^J
+	key s
+	key q
+	key s" >> \${TMPDIR}/moodleantigo.script
+	## }}}
+
+
+	## Tentativa de conectar à lista de recursos do curso
+	lynx -accept_all_cookies -cmd_script=\${TMPDIR}/moodleantigo.script aprender.unb.br &
+	carregar \$! "Tentando se conectar ao curso \$_count"
+
+
+	## Filtrar arquivo gerado pela tentativa de conectar ao curso e obter lista de arquivos {{{
+	_links=\$(cat "\${TMPDIR}/moodleantigo.source2.\${_count}" |
+	egrep -e '^[[:blank:]]+<option' |
+	sed -r 's/value=/\\n&/' |
+	sed -r 's/"//' |
+	sed -r 's/"/\\n/' |
+	egrep -e '^value' |
+	sed -r 's/^value=//' |
+	egrep -e '^http' |
+	egrep -e 'resource')
+	## }}}
+
+	_subcount=0
+	for _resource in \$_links ; do
+		_subcount=\$(( _subcount + 1 ))
+
+		## Criar diretório do curso
+		mkdir -p \$_count
+
+		## Filtrar arquivo filtrado para obter a página do arquivo {{{
+		echo "key /
+		key v
+		key i
+		key s
+		key i
+		key t
+		key a
+		key n
+		key t
+		key e
+		key ^J
+		key Up Arrow
+		key Up Arrow
+		key Up Arrow" > \${TMPDIR}/moodleantigo.script
+		echo -n "\$_user" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+		echo "key ^J" >> \${TMPDIR}/moodleantigo.script
+		echo -n "\$_passwd" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+		echo "key ^J
+		key ^J
+		key g" >> \${TMPDIR}/moodleantigo.script
+		echo -n "\$_resource" | sed -r 's/./key &\\n/g' >> \${TMPDIR}/moodleantigo.script
+		echo "key ^J
+		key D
+		key Down Arrow
+		key ^J
+		key ^J
+		key s
+		key q
+		key s" >> \${TMPDIR}/moodleantigo.script
+		### }}}
+
+		## Tentativa de se conectar à página do arquivo
+		cd \$_count
+		lynx -accept_all_cookies -cmd_script=\${TMPDIR}/moodleantigo.script aprender.unb.br &
+		carregar \$! "Tentando obter \${_subcount}º arquivo"
+		cd -
+	done
+done
+EOF
+## }}}
+
+
+## Executar script para obter arquivos do moodle
+( ${TMPDIR}/moodleantigoget $_user $_passwd ) &> /dev/null &
+
+## Gravar PID e ler arquivo de saída gerado pelo script anterior
+_pid=$!
+while kill -0 $_pid
+do
+	clear
+	cat ${TMPDIR}/moodleantigo.out
+	sleep 0.5
+done
+
+
+## Remover arquivos gerados no diretório temporário
+rm ${TMPDIR}/moodleantigo*
+
