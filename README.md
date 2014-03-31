@@ -1,5 +1,5 @@
-Moodle Novo Unb
-===============
+Moodle Unb
+==========
 
 Esse repositório contém dois scripts:
 
